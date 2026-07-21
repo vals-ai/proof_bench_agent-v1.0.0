@@ -1,0 +1,23 @@
+name: proof_bench_agent-v1.0.0
+
+install_cmd: bash setup.sh
+
+run_cmd: >-
+  bash /bundle/proof_bench_agent-v1.0.0/run.sh
+  "{problem_statement_path}"
+  "{task_id}"
+  "{model}"
+
+final_output: /logs
+
+output_artifacts:
+  - path: vals_format/config.json
+    source: /logs/*/turns/init/config.json
+  - path: vals_format/result.json
+    source: /logs/*/result.json
+
+defaults:
+  model:
+    type: str
+    required: true
+    description: "Provider-prefixed model key."
