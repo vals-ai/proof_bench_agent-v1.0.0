@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--task-id", required=True, help="Problem identifier")
     parser.add_argument("--output", required=True, help="Path to write result.json")
+    parser.add_argument("--log-dir", type=Path, default=Path("/logs"))
     parser.add_argument(
         "--lean-project", required=True, help="Path to Lean project with Mathlib"
     )
@@ -173,9 +174,9 @@ def build_output(
     result: AgentResult,
     *,
     model: str,
-    problem: dict[str, Any],
     environment: dict[str, Any],
     loogle_config: ToolConfig,
+    proof_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the output JSON with verification result, agent metadata, and diagnostics."""
     resolved, reason = check_proof_resolved(result)
@@ -183,11 +184,7 @@ def build_output(
     proof_text = result.final_answer or ""
     processed_proof = _strip_response_and_format_proof(proof_text) or ""
 
-    full_proof_code = (
-        f"{problem['header']}\n\n{problem['formal']}\n{processed_proof}"
-        if processed_proof
-        else ""
-    )
+    full_proof_code = proof_state.get("full_proof_code", "")
 
     return {
         "resolved": resolved,
@@ -213,6 +210,12 @@ def build_output(
 async def run(args: argparse.Namespace) -> None:
     problem = load_problem(args.problem_file)
     logger.info("Loaded problem: %s", problem["id"])
+
+    generation_path = args.log_dir / args.task_id / "generation.json"
+    generation_path.parent.mkdir(parents=True, exist_ok=True)
+    generation_path.write_text(json.dumps({"task_id": args.task_id, "status": "error", "data": ""}))
+    submission_path = Path(args.lean_project) / "submission.lean"
+    submission_path.write_text("")
 
     environment = snapshot_environment(args.lean_project)
     logger.info("Environment: %s", environment)
@@ -240,6 +243,7 @@ async def run(args: argparse.Namespace) -> None:
         max_turns=MAX_TURNS,
     )
 
+    proof_state: dict[str, Any] = {}
     result = await run_agent(
         args.model,
         user_prompt,
@@ -249,17 +253,27 @@ async def run(args: argparse.Namespace) -> None:
         problem_context={"header": problem["header"], "formal": problem["formal"]},
         max_turns=MAX_TURNS,
         question_id=args.task_id,
-        log_dir=Path("/logs"),
+        log_dir=args.log_dir,
+        state=proof_state,
     )
 
     output = build_output(
         result,
         model=args.model,
-        problem=problem,
         environment=environment,
         loogle_config=loogle_config,
+        proof_state=proof_state,
     )
     output_path.write_text(json.dumps(output, indent=2))
+    submission_path.write_text(output["full_proof_code"])
+    status = str(result.stop_reason)
+    if status in {"done_tool", "should_stop"}:
+        status = "success"
+    generation_path.write_text(json.dumps({
+        "task_id": args.task_id,
+        "status": status,
+        "data": output["full_proof_code"],
+    }))
     logger.info(
         "Wrote result to %s (resolved=%s, reason=%s)",
         args.output,

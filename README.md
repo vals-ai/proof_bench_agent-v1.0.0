@@ -23,3 +23,13 @@ valkyrie run start \
 ```
 
 The ProofBench benchmark image supplies Lean, Mathlib, and Loogle.
+
+For a custom model server, set `CUSTOM_ENDPOINT` and `CUSTOM_API_KEY` in the
+agent environment. Keep the model's provider prefix, such as `openai/my-model`,
+to select its API protocol. Without a custom endpoint, the agent uses the
+selected provider's normal API key.
+
+Each task writes `/logs/<task-id>/generation.json` and
+`/workspace/submission.lean`. The Lean file preserves the proof submitted by the
+agent, including helper declarations. Hosted evaluation independently verifies
+that proof. The internal `/workspace/result.json` output is also retained.
